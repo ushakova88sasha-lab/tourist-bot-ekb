@@ -2,6 +2,7 @@
 import json
 import math
 import os
+import re
 import logging
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
-SEARCH_RADIUS_M = 400
+SEARCH_RADIUS_M = 1500  # увеличен чтобы находить 3 точки
 POINTS_FILE = "data/points.json"
 
 with open(POINTS_FILE, "r", encoding="utf-8") as f:
@@ -37,17 +38,15 @@ def haversine(lat1, lon1, lat2, lon2) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def find_nearest_point(user_lat: float, user_lon: float):
-    best = None
-    best_dist = float("inf")
+def find_nearest_points(user_lat: float, user_lon: float, n: int = 3):
+    """Возвращает n ближайших точек в радиусе SEARCH_RADIUS_M."""
+    results = []
     for point in POINTS:
         dist = haversine(user_lat, user_lon, point["lat"], point["lon"])
-        if dist < best_dist:
-            best_dist = dist
-            best = point
-    if best_dist <= SEARCH_RADIUS_M:
-        return best, best_dist
-    return None, best_dist
+        if dist <= SEARCH_RADIUS_M:
+            results.append((point, dist))
+    results.sort(key=lambda x: x[1])
+    return results[:n]
 
 
 def get_nearby_names(point: dict) -> list[str]:
@@ -60,12 +59,10 @@ def get_nearby_names(point: dict) -> list[str]:
 
 
 def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
-    # Возвращаем кэш если есть
     if point.get("story"):
         logger.info(f"Кэш: «{point['name']}»")
         return point["story"]
 
-    # Генерируем через Claude
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     nearby_str = ", ".join(nearby_names) if nearby_names else "нет данных"
 
@@ -90,34 +87,47 @@ def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
         messages=[{"role": "user", "content": prompt}]
     )
     story = message.content[0].text
-
-    # Сохраняем в кэш
     point["story"] = story
     save_points()
     logger.info(f"Сохранён рассказ для «{point['name']}»")
-
     return story
 
 
-async def send_story(update, point, distance):
-    nearby_names = get_nearby_names(point)
-    await update.message.reply_text("✍️ Готовлю рассказ...")
-    try:
-        story = get_or_generate_story(point, nearby_names)
-        dist_text = f"\n\n📏 _Расстояние до точки: {int(distance)} м_"
-        await update.message.reply_text(story + dist_text, parse_mode="Markdown")
-        if point.get("photo_url"):
-            await update.message.reply_photo(photo=point["photo_url"])
-        await update.message.reply_location(latitude=point["lat"], longitude=point["lon"])
-    except Exception as e:
-        logger.error(f"Ошибка Claude API: {e}")
-        fallback = (
-            f"📍 *{point['name']}*\n\n"
-            f"📜 {point['history']}\n\n"
-            f"💡 {point['fact']}\n\n"
-            f"📏 _Расстояние: {int(distance)} м_"
+async def send_places(update, points_with_dist):
+    """Отправляет карточки для каждого из найденных мест."""
+    for point, distance in points_with_dist:
+        nearby_names = get_nearby_names(point)
+        await update.message.reply_text("✍️ Готовлю рассказ...")
+        try:
+            story = get_or_generate_story(point, nearby_names)
+            dist_text = f"\n\n📏 _Расстояние: {int(distance)} м_"
+            await update.message.reply_text(story + dist_text, parse_mode="Markdown")
+            if point.get("photo_url"):
+                await update.message.reply_photo(photo=point["photo_url"])
+            await update.message.reply_location(latitude=point["lat"], longitude=point["lon"])
+        except Exception as e:
+            logger.error(f"Ошибка Claude API: {e}")
+            fallback = (
+                f"📍 *{point['name']}*\n\n"
+                f"📜 {point['history']}\n\n"
+                f"💡 {point['fact']}\n\n"
+                f"📏 _Расстояние: {int(distance)} м_"
+            )
+            await update.message.reply_text(fallback, parse_mode="Markdown")
+
+
+async def handle_coords(update, lat, lon):
+    await update.message.reply_text("🔍 Ищу интересные места рядом с тобой...")
+    points = find_nearest_points(lat, lon)
+    if not points:
+        await update.message.reply_text(
+            f"😔 В радиусе {SEARCH_RADIUS_M} м от тебя пока нет точек в нашей базе.\n"
+            "Попробуй в другом месте центра Екатеринбурга!"
         )
-        await update.message.reply_text(fallback, parse_mode="Markdown")
+        return
+    names = ", ".join(p["name"] for p, _ in points)
+    await update.message.reply_text(f"📍 Нашла {len(points)} места рядом: {names}")
+    await send_places(update, points)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -134,30 +144,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_lat = update.message.location.latitude
-    user_lon = update.message.location.longitude
-
-    await update.message.reply_text("🔍 Ищу интересные места рядом с тобой...")
-
-    point, distance = find_nearest_point(user_lat, user_lon)
-
-    if point is None:
-        await update.message.reply_text(
-            f"😔 В радиусе {SEARCH_RADIUS_M} м от тебя пока нет точек в нашей базе.\n"
-            "База постоянно пополняется — попробуй в другом месте центра Екатеринбурга!"
-        )
-        return
-
-    await send_story(update, point, distance)
+    await handle_coords(update, update.message.location.latitude, update.message.location.longitude)
 
 
 def extract_coords(text: str):
-    import re
-    # Google Maps URL: q=56.838036,60.603428 или ll=56.838036,60.603428
     m = re.search(r'[?&](?:q|ll)=([\d.]+)[,]([\d.]+)', text)
     if m:
         return float(m.group(1)), float(m.group(2))
-    # Просто два числа через запятую или пробел
     parts = text.replace(",", " ").split()
     if len(parts) == 2:
         try:
@@ -172,15 +165,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         lat, lon = extract_coords(text)
         if lat is not None and 55 < lat < 58 and 59 < lon < 62:
-            await update.message.reply_text("🔍 Ищу интересные места рядом с тобой...")
-            point, distance = find_nearest_point(lat, lon)
-            if point is None:
-                await update.message.reply_text(
-                    f"😔 В радиусе {SEARCH_RADIUS_M} м пока нет точек.\n"
-                    "Попробуй координаты ближе к центру Екатеринбурга!"
-                )
-                return
-            await send_story(update, point, distance)
+            await handle_coords(update, lat, lon)
             return
     except ValueError:
         pass
