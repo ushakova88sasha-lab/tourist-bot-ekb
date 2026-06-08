@@ -106,6 +106,8 @@ async def send_story(update, point, distance):
         story = get_or_generate_story(point, nearby_names)
         dist_text = f"\n\n📏 _Расстояние до точки: {int(distance)} м_"
         await update.message.reply_text(story + dist_text, parse_mode="Markdown")
+        if point.get("photo_url"):
+            await update.message.reply_photo(photo=point["photo_url"])
         await update.message.reply_location(latitude=point["lat"], longitude=point["lon"])
     except Exception as e:
         logger.error(f"Ошибка Claude API: {e}")
