@@ -151,23 +151,37 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_story(update, point, distance)
 
 
+def extract_coords(text: str):
+    import re
+    # Google Maps URL: q=56.838036,60.603428 или ll=56.838036,60.603428
+    m = re.search(r'[?&](?:q|ll)=([\d.]+)[,]([\d.]+)', text)
+    if m:
+        return float(m.group(1)), float(m.group(2))
+    # Просто два числа через запятую или пробел
+    parts = text.replace(",", " ").split()
+    if len(parts) == 2:
+        try:
+            return float(parts[0]), float(parts[1])
+        except ValueError:
+            pass
+    return None, None
+
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     try:
-        parts = text.replace(",", " ").split()
-        if len(parts) == 2:
-            lat, lon = float(parts[0]), float(parts[1])
-            if 55 < lat < 58 and 59 < lon < 62:
-                await update.message.reply_text("🔍 Ищу интересные места рядом с тобой...")
-                point, distance = find_nearest_point(lat, lon)
-                if point is None:
-                    await update.message.reply_text(
-                        f"😔 В радиусе {SEARCH_RADIUS_M} м пока нет точек.\n"
-                        "Попробуй координаты ближе к центру Екатеринбурга!"
-                    )
-                    return
-                await send_story(update, point, distance)
+        lat, lon = extract_coords(text)
+        if lat is not None and 55 < lat < 58 and 59 < lon < 62:
+            await update.message.reply_text("🔍 Ищу интересные места рядом с тобой...")
+            point, distance = find_nearest_point(lat, lon)
+            if point is None:
+                await update.message.reply_text(
+                    f"😔 В радиусе {SEARCH_RADIUS_M} м пока нет точек.\n"
+                    "Попробуй координаты ближе к центру Екатеринбурга!"
+                )
                 return
+            await send_story(update, point, distance)
+            return
     except ValueError:
         pass
 
