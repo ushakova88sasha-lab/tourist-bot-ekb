@@ -4,7 +4,7 @@ import math
 import os
 import re
 import logging
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     CallbackQueryHandler, filters, ContextTypes, PicklePersistence
@@ -39,13 +39,10 @@ def haversine(lat1, lon1, lat2, lon2) -> float:
 
 
 def find_nearest_points(user_lat: float, user_lon: float, n: int = 3):
-    results = []
-    for point in POINTS:
-        dist = haversine(user_lat, user_lon, point["lat"], point["lon"])
-        if dist <= SEARCH_RADIUS_M:
-            results.append((point, dist))
+    results = [(point, haversine(user_lat, user_lon, point["lat"], point["lon"])) for point in POINTS]
     results.sort(key=lambda x: x[1])
-    return results[:n]
+    nearby = [(p, d) for p, d in results if d <= SEARCH_RADIUS_M]
+    return nearby[:n] if nearby else results[:n]
 
 
 def get_nearby_names(point: dict) -> list[str]:
@@ -110,16 +107,24 @@ def make_nav_keyboard(idx: int, total: int) -> InlineKeyboardMarkup:
 async def show_place(message, context, point, distance, idx, total):
     nearby_names = get_nearby_names(point)
     typing_msg = await message.reply_text("✍️ Готовлю рассказ...")
+    story = None
     try:
         story = get_or_generate_story(point, nearby_names)
+    except Exception as e:
+        logger.error(f"Ошибка Claude API: {e}")
+
+    try:
         await typing_msg.delete()
+    except Exception:
+        pass
+
+    if story:
         dist_text = f"\n\n📏 _Расстояние: {int(distance)} м_"
         await message.reply_text(story + dist_text, parse_mode="Markdown")
         if point.get("photo_url"):
             await message.reply_photo(photo=point["photo_url"])
         await message.reply_location(latitude=point["lat"], longitude=point["lon"])
-    except Exception as e:
-        logger.error(f"Ошибка Claude API: {e}")
+    else:
         await message.reply_text(
             f"📍 *{point['name']}*\n\n"
             f"📜 {point['history']}\n\n"
@@ -128,16 +133,15 @@ async def show_place(message, context, point, distance, idx, total):
             parse_mode="Markdown"
         )
 
-    nav_text = f"📍 *{point['name']}* — место {idx + 1} из {total}"
-    if idx + 1 == total:
-        await message.reply_text(nav_text, reply_markup=make_nav_keyboard(idx, total), parse_mode="Markdown")
-        await message.reply_text("Хочешь узнать о другом месте?", reply_markup=LOCATION_KEYBOARD)
-    else:
-        await message.reply_text(nav_text, reply_markup=make_nav_keyboard(idx, total), parse_mode="Markdown")
+    await message.reply_text(
+        f"📍 *{point['name']}* — место {idx + 1} из {total}",
+        reply_markup=make_nav_keyboard(idx, total),
+        parse_mode="Markdown"
+    )
 
 
 async def handle_coords(update, context, lat, lon):
-    await update.message.reply_text("🔍 Ищу интересные места рядом с тобой...")
+    await update.message.reply_text("🔍 Ищу интересные места рядом с тобой...", reply_markup=LOCATION_KEYBOARD)
     places = find_nearest_points(lat, lon)
     if not places:
         await update.message.reply_text(
@@ -186,6 +190,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def cmd_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "📍 Отправь своё местоположение — нажми синюю кнопку ниже:",
+        reply_markup=LOCATION_KEYBOARD
+    )
+
+
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await handle_coords(update, context, update.message.location.latitude, update.message.location.longitude)
 
@@ -205,6 +216,18 @@ def extract_coords(text: str):
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+
+    if "Указать новое место" in text:
+        await update.message.reply_text(
+            "📍 Чтобы поделиться геолокацией:\n\n"
+            "📱 *На телефоне:* нажми синюю кнопку внизу → подтверди в диалоге\n"
+            "💻 *На компьютере:* нажми скрепку 📎 → Геопозиция → выбери место → Отправить\n\n"
+            "Или просто напиши координаты: _56.841500, 60.604300_",
+            reply_markup=LOCATION_KEYBOARD,
+            parse_mode="Markdown"
+        )
+        return
+
     try:
         lat, lon = extract_coords(text)
         if lat is not None and 55 < lat < 58 and 59 < lon < 62:
@@ -215,16 +238,30 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "📍 Отправь мне своё местоположение, и я расскажу, что рядом!\n"
-        "Используй кнопку внизу или скрепку → Геопозиция.\n\n"
-        "Или просто напиши координаты: _56.841500, 60.604300_",
+        "Используй скрепку 📎 → Геопозиция.\n\n"
+        "Или напиши координаты: _56.841500, 60.604300_",
+        reply_markup=LOCATION_KEYBOARD,
         parse_mode="Markdown"
     )
 
 
+async def post_init(app):
+    await app.bot.set_my_commands([
+        BotCommand("mesto", "Указать новое место"),
+    ])
+
+
 def main():
     persistence = PicklePersistence(filepath="data/sessions.pkl")
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).persistence(persistence).build()
+    app = (
+        ApplicationBuilder()
+        .token(TELEGRAM_TOKEN)
+        .persistence(persistence)
+        .post_init(post_init)
+        .build()
+    )
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("mesto", cmd_place))
     app.add_handler(MessageHandler(filters.LOCATION, handle_location))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(handle_nav))
