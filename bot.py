@@ -102,7 +102,6 @@ def make_nav_keyboard(idx: int, total: int) -> InlineKeyboardMarkup:
     buttons = []
     if idx > 0:
         buttons.append(InlineKeyboardButton("◀ Назад", callback_data=f"nav_{idx - 1}"))
-    buttons.append(InlineKeyboardButton(f"{idx + 1} / {total}", callback_data="noop"))
     if idx < total - 1:
         buttons.append(InlineKeyboardButton("Вперёд ▶", callback_data=f"nav_{idx + 1}"))
     return InlineKeyboardMarkup([buttons])
@@ -156,9 +155,6 @@ async def handle_coords(update, context, lat, lon):
 async def handle_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
-    if query.data == "noop":
-        return
 
     idx = int(query.data.split("_")[1])
     places = context.user_data.get("places")
