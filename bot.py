@@ -109,9 +109,10 @@ def make_nav_keyboard(idx: int, total: int) -> InlineKeyboardMarkup:
 
 async def show_place(message, context, point, distance, idx, total):
     nearby_names = get_nearby_names(point)
-    await message.reply_text("✍️ Готовлю рассказ...")
+    typing_msg = await message.reply_text("✍️ Готовлю рассказ...")
     try:
         story = get_or_generate_story(point, nearby_names)
+        await typing_msg.delete()
         dist_text = f"\n\n📏 _Расстояние: {int(distance)} м_"
         await message.reply_text(story + dist_text, parse_mode="Markdown")
         if point.get("photo_url"):
