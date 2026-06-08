@@ -92,6 +92,12 @@ def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
     return story
 
 
+LOCATION_KEYBOARD = ReplyKeyboardMarkup(
+    [[KeyboardButton("📍 Указать новое место", request_location=True)]],
+    resize_keyboard=True
+)
+
+
 def make_nav_keyboard(idx: int, total: int) -> InlineKeyboardMarkup:
     buttons = []
     if idx > 0:
@@ -122,11 +128,12 @@ async def show_place(message, context, point, distance, idx, total):
             parse_mode="Markdown"
         )
 
-    await message.reply_text(
-        f"📍 *{point['name']}* — место {idx + 1} из {total}",
-        reply_markup=make_nav_keyboard(idx, total),
-        parse_mode="Markdown"
-    )
+    nav_text = f"📍 *{point['name']}* — место {idx + 1} из {total}"
+    if idx + 1 == total:
+        await message.reply_text(nav_text, reply_markup=make_nav_keyboard(idx, total), parse_mode="Markdown")
+        await message.reply_text("Хочешь узнать о другом месте?", reply_markup=LOCATION_KEYBOARD)
+    else:
+        await message.reply_text(nav_text, reply_markup=make_nav_keyboard(idx, total), parse_mode="Markdown")
 
 
 async def handle_coords(update, context, lat, lon):
@@ -172,15 +179,13 @@ async def handle_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[KeyboardButton("📍 Отправить моё местоположение", request_location=True)]]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     await update.message.reply_text(
         "Привет! 👋\n\n"
         "Я твой гид по Екатеринбургу.\n\n"
         "Отправь мне своё местоположение — и я расскажу, "
         "что интересного находится рядом с тобой!\n\n"
         "📍 Нажми кнопку ниже или отправь геолокацию вручную.",
-        reply_markup=reply_markup
+        reply_markup=LOCATION_KEYBOARD
     )
 
 
