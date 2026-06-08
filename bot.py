@@ -17,9 +17,15 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 SEARCH_RADIUS_M = 400
+POINTS_FILE = "data/points.json"
 
-with open("data/points.json", "r", encoding="utf-8") as f:
+with open(POINTS_FILE, "r", encoding="utf-8") as f:
     POINTS = json.load(f)
+
+
+def save_points():
+    with open(POINTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(POINTS, f, ensure_ascii=False, indent=2)
 
 
 def haversine(lat1, lon1, lat2, lon2) -> float:
@@ -53,7 +59,13 @@ def get_nearby_names(point: dict) -> list[str]:
     return nearby
 
 
-def generate_story(point: dict, nearby_names: list[str]) -> str:
+def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
+    # Возвращаем кэш если есть
+    if point.get("story"):
+        logger.info(f"Кэш: «{point['name']}»")
+        return point["story"]
+
+    # Генерируем через Claude
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     nearby_str = ", ".join(nearby_names) if nearby_names else "нет данных"
 
@@ -77,7 +89,33 @@ def generate_story(point: dict, nearby_names: list[str]) -> str:
         max_tokens=700,
         messages=[{"role": "user", "content": prompt}]
     )
-    return message.content[0].text
+    story = message.content[0].text
+
+    # Сохраняем в кэш
+    point["story"] = story
+    save_points()
+    logger.info(f"Сохранён рассказ для «{point['name']}»")
+
+    return story
+
+
+async def send_story(update, point, distance):
+    nearby_names = get_nearby_names(point)
+    await update.message.reply_text("✍️ Готовлю рассказ...")
+    try:
+        story = get_or_generate_story(point, nearby_names)
+        dist_text = f"\n\n📏 _Расстояние до точки: {int(distance)} м_"
+        await update.message.reply_text(story + dist_text, parse_mode="Markdown")
+        await update.message.reply_location(latitude=point["lat"], longitude=point["lon"])
+    except Exception as e:
+        logger.error(f"Ошибка Claude API: {e}")
+        fallback = (
+            f"📍 *{point['name']}*\n\n"
+            f"📜 {point['history']}\n\n"
+            f"💡 {point['fact']}\n\n"
+            f"📏 _Расстояние: {int(distance)} м_"
+        )
+        await update.message.reply_text(fallback, parse_mode="Markdown")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -108,28 +146,11 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    nearby_names = get_nearby_names(point)
-    await update.message.reply_text("✍️ Готовлю рассказ...")
-
-    try:
-        story = generate_story(point, nearby_names)
-        dist_text = f"\n\n📏 _Расстояние до точки: {int(distance)} м_"
-        await update.message.reply_text(story + dist_text, parse_mode="Markdown")
-        await update.message.reply_location(latitude=point["lat"], longitude=point["lon"])
-    except Exception as e:
-        logger.error(f"Ошибка Claude API: {e}")
-        fallback = (
-            f"📍 *{point['name']}*\n\n"
-            f"📜 {point['history']}\n\n"
-            f"💡 {point['fact']}\n\n"
-            f"📏 _Расстояние: {int(distance)} м_"
-        )
-        await update.message.reply_text(fallback, parse_mode="Markdown")
+    await send_story(update, point, distance)
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-    # Принимаем координаты в формате "56.841500, 60.604300"
     try:
         parts = text.replace(",", " ").split()
         if len(parts) == 2:
@@ -143,22 +164,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         "Попробуй координаты ближе к центру Екатеринбурга!"
                     )
                     return
-                nearby_names = get_nearby_names(point)
-                await update.message.reply_text("✍️ Готовлю рассказ...")
-                try:
-                    story = generate_story(point, nearby_names)
-                    dist_text = f"\n\n📏 _Расстояние до точки: {int(distance)} м_"
-                    await update.message.reply_text(story + dist_text, parse_mode="Markdown")
-                    await update.message.reply_location(latitude=point["lat"], longitude=point["lon"])
-                except Exception as e:
-                    logger.error(f"Ошибка Claude API: {e}")
-                    fallback = (
-                        f"📍 *{point['name']}*\n\n"
-                        f"📜 {point['history']}\n\n"
-                        f"💡 {point['fact']}\n\n"
-                        f"📏 _Расстояние: {int(distance)} м_"
-                    )
-                    await update.message.reply_text(fallback, parse_mode="Markdown")
+                await send_story(update, point, distance)
                 return
     except ValueError:
         pass
