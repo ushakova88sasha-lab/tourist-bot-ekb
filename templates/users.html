@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h4 class="fw-bold mb-1">Пользователи</h4>
+<p class="text-muted mb-4" style="font-size:14px;">{{ users|length }} подписчиков</p>
+
+<div class="card p-4">
+    {% if users %}
+    <table class="table table-hover align-middle mb-0">
+        <thead>
+            <tr>
+                <th>Имя</th>
+                <th>Username</th>
+                <th>Chat ID</th>
+                <th>Сообщений</th>
+                <th>Первый визит</th>
+                <th>Последняя активность</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for u in users %}
+        <tr>
+            <td class="fw-semibold">{{ u.first_name or '—' }} {{ u.last_name or '' }}</td>
+            <td class="text-muted" style="font-size:14px;">
+                {% if u.username %}@{{ u.username }}{% else %}—{% endif %}
+            </td>
+            <td style="font-size:13px; color:#718096; font-family:monospace;">{{ u.chat_id }}</td>
+            <td>
+                <span class="badge rounded-pill" style="background:#ebf8ff; color:#2b6cb0;">{{ u.msg_count }}</span>
+            </td>
+            <td style="font-size:13px; color:#718096;">{{ u.first_seen[:10] if u.first_seen else '—' }}</td>
+            <td style="font-size:13px; color:#718096;">{{ u.last_active[:16] if u.last_active else '—' }}</td>
+            <td>
+                <a href="{{ url_for('dialog', chat_id=u.chat_id) }}" class="btn btn-sm btn-outline-primary" style="border-radius:6px;">
+                    <i class="bi bi-chat-text"></i> Диалог
+                </a>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted mb-0">Пользователей пока нет.</p>
+    {% endif %}
+</div>
+
+{% endblock %}

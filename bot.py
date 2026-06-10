@@ -10,6 +10,7 @@ from telegram.ext import (
     CallbackQueryHandler, filters, ContextTypes, PicklePersistence
 )
 import anthropic
+import db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -183,7 +184,15 @@ async def handle_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_place(query.message, context, point, distance, idx, len(places))
 
 
+def _log_user(update: Update):
+    u = update.effective_user
+    if u:
+        db.upsert_user(u.id, u.username, u.first_name, u.last_name)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _log_user(update)
+    db.log_message(update.effective_user.id, "in", "/start")
     await update.message.reply_text(
         "Привет! 👋\n\n"
         "Я твой гид по Екатеринбургу.\n\n"
@@ -195,6 +204,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _log_user(update)
+    db.log_message(update.effective_user.id, "in", "/mesto")
     await update.message.reply_text(
         "📍 Отправь своё местоположение — нажми синюю кнопку ниже:",
         reply_markup=LOCATION_KEYBOARD
@@ -202,7 +213,11 @@ async def cmd_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await handle_coords(update, context, update.message.location.latitude, update.message.location.longitude)
+    _log_user(update)
+    lat = update.message.location.latitude
+    lon = update.message.location.longitude
+    db.log_message(update.effective_user.id, "in", f"📍 Геолокация: {lat}, {lon}")
+    await handle_coords(update, context, lat, lon)
 
 
 def extract_coords(text: str):
@@ -219,7 +234,9 @@ def extract_coords(text: str):
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _log_user(update)
     text = update.message.text.strip()
+    db.log_message(update.effective_user.id, "in", text)
 
     if "Указать новое место" in text:
         await update.message.reply_text(
@@ -253,6 +270,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def post_init(app):
+    db.init_db()
     await app.bot.set_my_commands([
         BotCommand("mesto", "Указать новое место"),
     ])

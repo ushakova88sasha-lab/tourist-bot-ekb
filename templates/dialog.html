@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex align-items-center mb-4">
+    <a href="{{ url_for('users') }}" class="btn btn-sm btn-outline-secondary me-3" style="border-radius:6px;">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+        <h5 class="fw-bold mb-0">{{ user.first_name or '—' }} {{ user.last_name or '' }}</h5>
+        <span class="text-muted" style="font-size:13px;">
+            {% if user.username %}@{{ user.username }} · {% endif %}
+            chat_id: {{ user.chat_id }} · {{ user.msg_count }} сообщ.
+        </span>
+    </div>
+</div>
+
+<div class="card p-4" style="max-width:720px;">
+    {% if messages %}
+    <div style="display:flex; flex-direction:column; gap:10px;">
+    {% for msg in messages %}
+        {% if msg.direction == 'in' %}
+        <div style="display:flex; justify-content:flex-start;">
+            <div style="background:#f0f2f5; border-radius:12px 12px 12px 4px; padding:10px 14px; max-width:80%;">
+                <div style="font-size:14px;">{{ msg.text }}</div>
+                <div style="font-size:11px; color:#a0aec0; margin-top:4px;">{{ msg.created_at[11:16] }}</div>
+            </div>
+        </div>
+        {% else %}
+        <div style="display:flex; justify-content:flex-end;">
+            <div style="background:#d2e8ff; border-radius:12px 12px 4px 12px; padding:10px 14px; max-width:80%;">
+                <div style="font-size:14px;">{{ msg.text }}</div>
+                <div style="font-size:11px; color:#a0aec0; margin-top:4px; text-align:right;">{{ msg.created_at[11:16] }}</div>
+            </div>
+        </div>
+        {% endif %}
+    {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">Сообщений нет.</p>
+    {% endif %}
+</div>
+
+<script>
+    window.scrollTo(0, document.body.scrollHeight);
+</script>
+
+{% endblock %}
