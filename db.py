@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 import sqlite3
+import os
 from datetime import datetime, date
 
-DB_PATH = "data/admin.db"
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "admin.db")
 
 
 def get_conn():
