@@ -106,6 +106,7 @@ def make_nav_keyboard(idx: int, total: int) -> InlineKeyboardMarkup:
 
 
 async def show_place(message, context, point, distance, idx, total):
+    chat_id = message.chat_id
     nearby_names = get_nearby_names(point)
     typing_msg = await message.reply_text("✍️ Готовлю рассказ...")
     story = None
@@ -122,22 +123,29 @@ async def show_place(message, context, point, distance, idx, total):
     if story:
         dist_text = f"\n\n📏 Расстояние: {int(distance)} м"
         await message.reply_text(story + dist_text)
+        db.log_message(chat_id, "out", story + dist_text)
         if point.get("photo_url"):
             await message.reply_photo(photo=point["photo_url"])
+            db.log_message(chat_id, "out", f"🖼 Фото: {point['name']}")
         await message.reply_location(latitude=point["lat"], longitude=point["lon"])
+        db.log_message(chat_id, "out", f"📍 Геолокация места: {point['lat']}, {point['lon']}")
     else:
-        await message.reply_text(
-            f"📍 *{point['name']}*\n\n"
+        fallback = (
+            f"📍 {point['name']}\n\n"
             f"📜 {point['history']}\n\n"
             f"💡 {point['fact']}\n\n"
-            f"📏 _Расстояние: {int(distance)} м_",
-            parse_mode="Markdown"
+            f"📏 Расстояние: {int(distance)} м"
         )
+        await message.reply_text(fallback)
+        db.log_message(chat_id, "out", fallback)
 
-    await message.reply_text(
-        f"📍 {point['name']} — место {idx + 1} из {total}",
-        reply_markup=make_nav_keyboard(idx, total)
-    )
+    nav = make_nav_keyboard(idx, total)
+    nav_buttons = " ".join(
+        btn.text for row in nav.inline_keyboard for btn in row
+    ) if nav.inline_keyboard else ""
+    nav_text = f"📍 {point['name']} — место {idx + 1} из {total}"
+    await message.reply_text(nav_text, reply_markup=nav)
+    db.log_message(chat_id, "out", nav_text + (f"  [{nav_buttons}]" if nav_buttons else ""))
 
 
 async def handle_coords(update, context, lat, lon):
@@ -165,9 +173,12 @@ async def handle_coords(update, context, lat, lon):
 async def handle_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    uid = update.effective_user.id
+    _log_user(update)
 
     idx = int(query.data.split("_")[1])
     places = context.user_data.get("places")
+    db.log_message(uid, "in", f"[кнопка навигации → место {idx + 1}]")
 
     if not places:
         await query.edit_message_text("Сессия устарела — отправь геолокацию заново.")
@@ -192,15 +203,15 @@ def _log_user(update: Update):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _log_user(update)
-    db.log_message(update.effective_user.id, "in", "/start")
-    await update.message.reply_text(
-        "Привет! 👋\n\n"
-        "Я твой гид по Екатеринбургу.\n\n"
-        "Отправь мне своё местоположение — и я расскажу, "
-        "что интересного находится рядом с тобой!\n\n"
-        "📍 Нажми кнопку ниже или отправь геолокацию вручную.",
-        reply_markup=LOCATION_KEYBOARD
-    )
+    uid = update.effective_user.id
+    db.log_message(uid, "in", "/start")
+    text = ("Привет! 👋\n\n"
+            "Я твой гид по Екатеринбургу.\n\n"
+            "Отправь мне своё местоположение — и я расскажу, "
+            "что интересного находится рядом с тобой!\n\n"
+            "📍 Нажми кнопку ниже или отправь геолокацию вручную.")
+    await update.message.reply_text(text, reply_markup=LOCATION_KEYBOARD)
+    db.log_message(uid, "out", text)
 
 
 async def cmd_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -257,16 +268,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         pass
 
-    await update.message.reply_text(
+    reply = (
         "📍 Отправь мне геолокацию — расскажу что интересного рядом!\n\n"
         "Если кнопка не работает, проверь:\n"
-        "📱 *Android:* Настройки → Приложения → Telegram → Разрешения → Местоположение → Разрешить\n"
-        "🍎 *iPhone:* Настройки → Telegram → Геопозиция → При использовании\n\n"
-        "Или отправь геолокацию вручную: скрепка 📎 → Геопозиция\n"
-        "Или напиши координаты: _56.841500, 60.604300_",
-        reply_markup=LOCATION_KEYBOARD,
-        parse_mode="Markdown"
+        "📱 Android: Настройки → Приложения → Telegram → Разрешения → Местоположение\n"
+        "🍎 iPhone: Настройки → Telegram → Геопозиция → При использовании\n\n"
+        "Или отправь через скрепку 📎 → Геопозиция\n"
+        "Или напиши координаты: 56.841500, 60.604300"
     )
+    await update.message.reply_text(reply, reply_markup=LOCATION_KEYBOARD)
+    db.log_message(update.effective_user.id, "out", reply)
 
 
 async def post_init(app):
