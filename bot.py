@@ -12,7 +12,15 @@ from telegram.ext import (
 import anthropic
 import db
 
-logging.basicConfig(level=logging.INFO)
+LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "bot.log")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler(),
+    ]
+)
 logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
