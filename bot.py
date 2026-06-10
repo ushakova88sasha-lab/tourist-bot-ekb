@@ -119,8 +119,8 @@ async def show_place(message, context, point, distance, idx, total):
         pass
 
     if story:
-        dist_text = f"\n\n📏 _Расстояние: {int(distance)} м_"
-        await message.reply_text(story + dist_text, parse_mode="Markdown")
+        dist_text = f"\n\n📏 Расстояние: {int(distance)} м"
+        await message.reply_text(story + dist_text)
         if point.get("photo_url"):
             await message.reply_photo(photo=point["photo_url"])
         await message.reply_location(latitude=point["lat"], longitude=point["lon"])
@@ -134,9 +134,8 @@ async def show_place(message, context, point, distance, idx, total):
         )
 
     await message.reply_text(
-        f"📍 *{point['name']}* — место {idx + 1} из {total}",
-        reply_markup=make_nav_keyboard(idx, total),
-        parse_mode="Markdown"
+        f"📍 {point['name']} — место {idx + 1} из {total}",
+        reply_markup=make_nav_keyboard(idx, total)
     )
 
 
