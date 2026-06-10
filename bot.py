@@ -141,7 +141,7 @@ async def show_place(message, context, point, distance, idx, total):
 
 
 async def handle_coords(update, context, lat, lon):
-    await update.message.reply_text("🔍 Ищу интересные места рядом с тобой...", reply_markup=LOCATION_KEYBOARD)
+    searching_msg = await update.message.reply_text("🔍 Ищу интересные места рядом с тобой...", reply_markup=LOCATION_KEYBOARD)
     places = find_nearest_points(lat, lon)
     if not places:
         await update.message.reply_text(
@@ -152,6 +152,11 @@ async def handle_coords(update, context, lat, lon):
 
     # Сохраняем список в сессии пользователя
     context.user_data["places"] = [(p["id"], int(dist)) for p, dist in places]
+
+    try:
+        await searching_msg.delete()
+    except Exception:
+        pass
 
     point, distance = places[0]
     await show_place(update.message, context, point, distance, 0, len(places))
@@ -237,8 +242,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     await update.message.reply_text(
-        "📍 Отправь мне своё местоположение, и я расскажу, что рядом!\n"
-        "Используй скрепку 📎 → Геопозиция.\n\n"
+        "📍 Отправь мне геолокацию — расскажу что интересного рядом!\n\n"
+        "Если кнопка не работает, проверь:\n"
+        "📱 *Android:* Настройки → Приложения → Telegram → Разрешения → Местоположение → Разрешить\n"
+        "🍎 *iPhone:* Настройки → Telegram → Геопозиция → При использовании\n\n"
+        "Или отправь геолокацию вручную: скрепка 📎 → Геопозиция\n"
         "Или напиши координаты: _56.841500, 60.604300_",
         reply_markup=LOCATION_KEYBOARD,
         parse_mode="Markdown"
