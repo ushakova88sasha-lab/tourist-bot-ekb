@@ -370,6 +370,37 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.log_message(update.effective_user.id, "out", reply)
 
 
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _log_user(update)
+    uid = update.effective_user.id
+    caption = update.message.caption or ""
+    text = f"📷 Фото{': ' + caption if caption else ''}"
+    db.log_message(uid, "in", text)
+    await handle_text(update, context)
+
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _log_user(update)
+    uid = update.effective_user.id
+    doc = update.message.document
+    name = doc.file_name or "файл"
+    db.log_message(uid, "in", f"📎 Файл: {name}")
+    await update.message.reply_text(
+        "📍 Отправь мне геолокацию — расскажу что интересного рядом!\n"
+        "Используй кнопку внизу или скрепку → Геопозиция.",
+        reply_markup=LOCATION_KEYBOARD
+    )
+
+
+async def handle_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _log_user(update)
+    db.log_message(update.effective_user.id, "in", "🎭 Стикер")
+    await update.message.reply_text(
+        "📍 Отправь мне геолокацию — расскажу что интересного рядом!",
+        reply_markup=LOCATION_KEYBOARD
+    )
+
+
 async def post_init(app):
     db.init_db()
     await app.bot.set_my_commands([
@@ -389,6 +420,9 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("mesto", cmd_place))
     app.add_handler(MessageHandler(filters.LOCATION, handle_location))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(handle_nav))
     logger.info("Бот запущен...")

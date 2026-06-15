@@ -55,7 +55,17 @@
                 </a>
             </td>
             <td style="max-width:400px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px;">
-                {{ msg.text }}
+                {% if msg.text.startswith('📷') %}
+                    <span style="color:#805ad5;">{{ msg.text }}</span>
+                {% elif msg.text.startswith('📎') %}
+                    <span style="color:#2b6cb0;">{{ msg.text }}</span>
+                {% elif msg.text.startswith('📍') %}
+                    <span style="color:#276749;">{{ msg.text }}</span>
+                {% elif msg.text.startswith('🎭') %}
+                    <span style="color:#c05621;">{{ msg.text }}</span>
+                {% else %}
+                    {{ msg.text }}
+                {% endif %}
             </td>
             <td style="font-size:13px; color:#718096; white-space:nowrap;">{{ msg.created_at }}</td>
         </tr>
