@@ -10,7 +10,7 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     CallbackQueryHandler, filters, ContextTypes, PicklePersistence
 )
-import anthropic
+import google.generativeai as genai
 import db
 
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "bot.log")
@@ -25,7 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 SEARCH_RADIUS_M = 1500
 POINTS_FILE = "data/points.json"
@@ -78,7 +78,8 @@ def reverse_geocode(lat: float, lon: float) -> str:
 
 
 def generate_point_data(lat: float, lon: float, place_name: str) -> dict:
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel("gemini-1.5-flash")
     prompt = f"""Ты — гид по городам России. Нужна информация о месте.
 
 Название: {place_name}
@@ -91,16 +92,12 @@ def generate_point_data(lat: float, lon: float, place_name: str) -> dict:
   "fact": "один интересный факт 1-2 предложения"
 }}"""
 
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=500,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    text = message.content[0].text.strip()
+    response = model.generate_content(prompt)
+    text = response.text.strip()
     json_match = re.search(r'\{.*\}', text, re.DOTALL)
     if json_match:
         return json.loads(json_match.group())
-    raise ValueError(f"Claude не вернул JSON: {text}")
+    raise ValueError(f"Gemini не вернул JSON: {text}")
 
 
 def add_new_point(lat: float, lon: float) -> dict | None:
@@ -134,10 +131,11 @@ def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
         logger.info(f"Кэш: «{point['name']}»")
         return point["story"]
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel("gemini-1.5-flash")
     nearby_str = ", ".join(nearby_names) if nearby_names else "нет данных"
 
-    prompt = f"""Ты — увлечённый гид по Екатеринбургу. Пользователь только что пришёл к месту "{point['name']}".
+    prompt = f"""Ты — увлечённый гид. Пользователь только что пришёл к месту "{point['name']}".
 
 Данные о месте:
 - Историческая справка: {point['history']}
@@ -152,12 +150,8 @@ def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
 
 Пиши тепло, как будто рассказываешь другу. Не используй казённый стиль."""
 
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=700,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    story = message.content[0].text
+    response = model.generate_content(prompt)
+    story = response.text
     point["story"] = story
     save_points()
     logger.info(f"Сохранён рассказ для «{point['name']}»")
