@@ -296,7 +296,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     db.log_message(uid, "in", "/start")
     text = ("Привет! 👋\n\n"
-            "Я твой гид по Екатеринбургу.\n\n"
+            "Я твой гид по интересным местам.\n\n"
             "Отправь мне своё местоположение — и я расскажу, "
             "что интересного находится рядом с тобой!\n\n"
             "📍 Нажми кнопку ниже или отправь геолокацию вручную.")
