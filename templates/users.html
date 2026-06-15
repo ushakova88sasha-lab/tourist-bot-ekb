@@ -21,7 +21,12 @@
         <tbody>
         {% for u in users %}
         <tr>
-            <td class="fw-semibold">{{ u.first_name or '—' }} {{ u.last_name or '' }}</td>
+            <td class="fw-semibold">
+                {{ u.first_name or '—' }} {{ u.last_name or '' }}
+                {% if u.chat_id == owner_id %}
+                <span class="badge ms-1" style="background:#d4edda; color:#155724; font-size:11px;">Это я</span>
+                {% endif %}
+            </td>
             <td class="text-muted" style="font-size:14px;">
                 {% if u.username %}@{{ u.username }}{% else %}—{% endif %}
             </td>

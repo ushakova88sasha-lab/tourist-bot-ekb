@@ -10,6 +10,7 @@ app.secret_key = os.environ.get("ADMIN_SECRET", "change-me-in-production")
 ADMIN_LOGIN    = os.environ.get("ADMIN_LOGIN", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
 BOT_NAME       = os.environ.get("BOT_NAME", "Турист-бот Екатеринбург")
+OWNER_ID       = int(os.environ.get("OWNER_ID", "84822852"))
 
 
 def login_required(f):
@@ -51,7 +52,7 @@ def dashboard():
 @login_required
 def users():
     users_list = db.get_users()
-    return render_template("users.html", users=users_list, bot_name=BOT_NAME)
+    return render_template("users.html", users=users_list, bot_name=BOT_NAME, owner_id=OWNER_ID)
 
 
 @app.route("/users/<int:chat_id>")
@@ -59,7 +60,7 @@ def users():
 def dialog(chat_id):
     user = db.get_user(chat_id)
     messages = db.get_messages(chat_id)
-    return render_template("dialog.html", user=user, messages=messages, bot_name=BOT_NAME)
+    return render_template("dialog.html", user=user, messages=messages, bot_name=BOT_NAME, owner_id=OWNER_ID)
 
 
 if __name__ == "__main__":
