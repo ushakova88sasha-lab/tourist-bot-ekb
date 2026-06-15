@@ -237,10 +237,9 @@ async def handle_coords(update, context, lat, lon):
         if new_point:
             places = [(new_point, 0)]
         else:
-            await update.message.reply_text(
-                f"😔 В радиусе {SEARCH_RADIUS_M} м от тебя пока нет точек.\n"
-                "Попробуй в другом месте!"
-            )
+            reply = f"😔 В радиусе {SEARCH_RADIUS_M} м от тебя пока нет точек.\nПопробуй в другом месте!"
+            await update.message.reply_text(reply)
+            db.log_message(update.effective_user.id, "out", reply)
             try:
                 await searching_msg.delete()
             except Exception:
@@ -306,11 +305,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _log_user(update)
-    db.log_message(update.effective_user.id, "in", "/mesto")
-    await update.message.reply_text(
-        "📍 Отправь своё местоположение — нажми синюю кнопку ниже:",
-        reply_markup=LOCATION_KEYBOARD
-    )
+    uid = update.effective_user.id
+    db.log_message(uid, "in", "/mesto")
+    reply = "📍 Отправь своё местоположение — нажми синюю кнопку ниже:"
+    await update.message.reply_text(reply, reply_markup=LOCATION_KEYBOARD)
+    db.log_message(uid, "out", reply)
 
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -340,14 +339,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.log_message(update.effective_user.id, "in", text)
 
     if "Указать новое место" in text:
-        await update.message.reply_text(
+        reply = (
             "📍 Чтобы поделиться геолокацией:\n\n"
             "📱 *На телефоне:* нажми синюю кнопку внизу → подтверди в диалоге\n"
             "💻 *На компьютере:* нажми скрепку 📎 → Геопозиция → выбери место → Отправить\n\n"
-            "Или просто напиши координаты: _56.841500, 60.604300_",
-            reply_markup=LOCATION_KEYBOARD,
-            parse_mode="Markdown"
+            "Или просто напиши координаты: _56.841500, 60.604300_"
         )
+        await update.message.reply_text(reply, reply_markup=LOCATION_KEYBOARD, parse_mode="Markdown")
+        db.log_message(update.effective_user.id, "out", reply)
         return
 
     try:
@@ -374,31 +373,29 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _log_user(update)
     uid = update.effective_user.id
     caption = update.message.caption or ""
-    text = f"📷 Фото{': ' + caption if caption else ''}"
-    db.log_message(uid, "in", text)
-    await handle_text(update, context)
+    db.log_message(uid, "in", f"📷 Фото{': ' + caption if caption else ''}")
+    reply = "📍 Отправь мне геолокацию — расскажу что интересного рядом!\nИспользуй кнопку внизу или скрепку → Геопозиция."
+    await update.message.reply_text(reply, reply_markup=LOCATION_KEYBOARD)
+    db.log_message(uid, "out", reply)
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _log_user(update)
     uid = update.effective_user.id
-    doc = update.message.document
-    name = doc.file_name or "файл"
+    name = update.message.document.file_name or "файл"
     db.log_message(uid, "in", f"📎 Файл: {name}")
-    await update.message.reply_text(
-        "📍 Отправь мне геолокацию — расскажу что интересного рядом!\n"
-        "Используй кнопку внизу или скрепку → Геопозиция.",
-        reply_markup=LOCATION_KEYBOARD
-    )
+    reply = "📍 Отправь мне геолокацию — расскажу что интересного рядом!\nИспользуй кнопку внизу или скрепку → Геопозиция."
+    await update.message.reply_text(reply, reply_markup=LOCATION_KEYBOARD)
+    db.log_message(uid, "out", reply)
 
 
 async def handle_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _log_user(update)
-    db.log_message(update.effective_user.id, "in", "🎭 Стикер")
-    await update.message.reply_text(
-        "📍 Отправь мне геолокацию — расскажу что интересного рядом!",
-        reply_markup=LOCATION_KEYBOARD
-    )
+    uid = update.effective_user.id
+    db.log_message(uid, "in", "🎭 Стикер")
+    reply = "📍 Отправь мне геолокацию — расскажу что интересного рядом!"
+    await update.message.reply_text(reply, reply_markup=LOCATION_KEYBOARD)
+    db.log_message(uid, "out", reply)
 
 
 async def post_init(app):
