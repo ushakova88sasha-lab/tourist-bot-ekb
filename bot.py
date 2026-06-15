@@ -4,6 +4,7 @@ import math
 import os
 import re
 import logging
+import urllib.request
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -61,6 +62,71 @@ def get_nearby_names(point: dict) -> list[str]:
             if p["id"] == pid:
                 nearby.append(p["name"])
     return nearby
+
+
+def reverse_geocode(lat: float, lon: float) -> str:
+    url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=ru"
+    req = urllib.request.Request(url, headers={"User-Agent": "TouristBot/1.0"})
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        data = json.loads(resp.read())
+    name = (
+        data.get("name")
+        or data.get("address", {}).get("road")
+        or data.get("display_name", "неизвестное место")
+    )
+    return name
+
+
+def generate_point_data(lat: float, lon: float, place_name: str) -> dict:
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    prompt = f"""Ты — гид по городам России. Нужна информация о месте.
+
+Название: {place_name}
+Координаты: {lat}, {lon}
+
+Верни только JSON, без пояснений:
+{{
+  "name": "точное красивое название места",
+  "history": "историческая справка 2-3 предложения живым языком",
+  "fact": "один интересный факт 1-2 предложения"
+}}"""
+
+    message = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=500,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    text = message.content[0].text.strip()
+    json_match = re.search(r'\{.*\}', text, re.DOTALL)
+    if json_match:
+        return json.loads(json_match.group())
+    raise ValueError(f"Claude не вернул JSON: {text}")
+
+
+def add_new_point(lat: float, lon: float) -> dict | None:
+    try:
+        place_name = reverse_geocode(lat, lon)
+        logger.info(f"Nominatim: «{place_name}» для {lat}, {lon}")
+        data = generate_point_data(lat, lon, place_name)
+        new_id = max((p["id"] for p in POINTS), default=0) + 1
+        point = {
+            "id": new_id,
+            "name": data.get("name", place_name),
+            "lat": lat,
+            "lon": lon,
+            "history": data.get("history", ""),
+            "fact": data.get("fact", ""),
+            "photo_url": "",
+            "tags": ["ai-generated"],
+            "nearby_ids": []
+        }
+        POINTS.append(point)
+        save_points()
+        logger.info(f"Новая точка #{new_id} добавлена: «{point['name']}»")
+        return point
+    except Exception as e:
+        logger.error(f"Ошибка генерации новой точки: {e}")
+        return None
 
 
 def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
@@ -159,14 +225,30 @@ async def show_place(message, context, point, distance, idx, total):
 async def handle_coords(update, context, lat, lon):
     searching_msg = await update.message.reply_text("🔍 Ищу интересные места рядом с тобой...", reply_markup=LOCATION_KEYBOARD)
     places = find_nearest_points(lat, lon)
-    if not places:
-        await update.message.reply_text(
-            f"😔 В радиусе {SEARCH_RADIUS_M} м от тебя пока нет точек.\n"
-            "Попробуй в другом месте центра Екатеринбурга!"
-        )
-        return
 
-    # Сохраняем список в сессии пользователя
+    within_radius = [(p, d) for p, d in places if d <= SEARCH_RADIUS_M]
+
+    if not within_radius:
+        try:
+            await searching_msg.edit_text("🌐 Нашёл новое место — узнаю о нём у ИИ...")
+        except Exception:
+            pass
+        new_point = add_new_point(lat, lon)
+        if new_point:
+            places = [(new_point, 0)]
+        else:
+            await update.message.reply_text(
+                f"😔 В радиусе {SEARCH_RADIUS_M} м от тебя пока нет точек.\n"
+                "Попробуй в другом месте!"
+            )
+            try:
+                await searching_msg.delete()
+            except Exception:
+                pass
+            return
+    else:
+        places = within_radius
+
     context.user_data["places"] = [(p["id"], int(dist)) for p, dist in places]
 
     try:
