@@ -55,8 +55,8 @@
                 </a>
             </td>
             <td style="max-width:400px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px;">
-                {% if msg.text.startswith('📷') %}
-                    <span style="color:#805ad5;">{{ msg.text }}</span>
+                {% if msg.text.startswith('📷:') %}
+                    <span style="color:#805ad5;">📷 Фото{% if msg.text.split(':', 2)|length > 2 and msg.text.split(':', 2)[2] %}: {{ msg.text.split(':', 2)[2] }}{% endif %}</span>
                 {% elif msg.text.startswith('📎') %}
                     <span style="color:#2b6cb0;">{{ msg.text }}</span>
                 {% elif msg.text.startswith('📍') %}

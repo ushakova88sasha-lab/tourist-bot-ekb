@@ -366,8 +366,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _log_user(update)
     uid = update.effective_user.id
+    file_id = update.message.photo[-1].file_id
     caption = update.message.caption or ""
-    db.log_message(uid, "in", f"📷 Фото{': ' + caption if caption else ''}")
+    db.log_message(uid, "in", f"📷:{file_id}" + (f":{caption}" if caption else ""))
     reply = "📍 Отправь мне геолокацию — расскажу что интересного рядом!\nИспользуй кнопку внизу или скрепку → Геопозиция."
     await update.message.reply_text(reply, reply_markup=LOCATION_KEYBOARD)
     db.log_message(uid, "out", reply)

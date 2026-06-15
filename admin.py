@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 import os
+import json
+import urllib.request
 from functools import wraps
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for, session, Response
 import db
 
 app = Flask(__name__)
@@ -61,6 +63,18 @@ def dialog(chat_id):
     user = db.get_user(chat_id)
     messages = db.get_messages(chat_id)
     return render_template("dialog.html", user=user, messages=messages, bot_name=BOT_NAME, owner_id=OWNER_ID)
+
+
+@app.route("/photo/<file_id>")
+@login_required
+def proxy_photo(file_id):
+    token = os.environ.get("TELEGRAM_TOKEN", "")
+    with urllib.request.urlopen(f"https://api.telegram.org/bot{token}/getFile?file_id={file_id}") as r:
+        data = json.loads(r.read())
+    file_path = data["result"]["file_path"]
+    with urllib.request.urlopen(f"https://api.telegram.org/file/bot{token}/{file_path}") as r:
+        content = r.read()
+    return Response(content, mimetype="image/jpeg")
 
 
 if __name__ == "__main__":
