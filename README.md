@@ -1,93 +1,147 @@
-# 🗺 Турист-бот Екатеринбург
+# Турист-бот Екатеринбург
 
-Telegram-бот: пользователь отправляет геолокацию — бот рассказывает историю ближайшего места.
+Telegram-бот-гид по Екатеринбургу. Пользователь отправляет геолокацию — бот находит до 3 ближайших достопримечательностей и генерирует живые рассказы через Claude AI.
 
-## Быстрый старт
+Для мест, которых нет в базе, бот автоматически запрашивает данные у Nominatim (OpenStreetMap) и Claude, сохраняет в базу — и при следующем запросе отвечает мгновенно из кэша.
 
-### 1. Получи токены
-- **Telegram токен** → напиши @BotFather в Telegram → `/newbot`
-- **Anthropic API ключ** → https://console.anthropic.com
+---
 
-### 2. Установи зависимости
-```bash
-pip install -r requirements.txt
-```
+## Возможности
 
-### 3. Задай переменные окружения
-```bash
-export TELEGRAM_TOKEN="твой_токен_от_BotFather"
-export ANTHROPIC_API_KEY="твой_ключ_от_Anthropic"
-```
+- Геолокация, текстовые координаты (`56.841500, 60.604300`) и ссылки Google Maps
+- 3 ближайших места с навигацией ◀/▶
+- Рассказы генерируются один раз и кэшируются в `points.json`
+- Фото места + пин на карте
+- **Авто-генерация новых точек**: неизвестное место → Nominatim → Claude → сохраняется в базу
+- Веб-админка: пользователи, диалоги, статистика
+- Работает 24/7 на VPS через systemd
 
-Или создай файл `.env` (и используй python-dotenv):
-```
-TELEGRAM_TOKEN=твой_токен
-ANTHROPIC_API_KEY=твой_ключ
-```
+---
 
-### 4. Запусти бота
-```bash
-python bot.py
-```
+## Технологии
+
+- Python 3.12+
+- [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) 22.7
+- [Anthropic Claude API](https://docs.anthropic.com) (claude-sonnet-4-20250514)
+- Flask (веб-админка)
+- SQLite (логирование)
+- Nominatim / OpenStreetMap (обратное геокодирование)
 
 ---
 
 ## Структура проекта
+
 ```
-tourist_bot/
-├── bot.py              # Основной код бота
+├── bot.py              # Весь код бота
+├── admin.py            # Flask веб-админка (порт 5000)
+├── db.py               # SQLite хелпер
 ├── requirements.txt    # Зависимости
+├── CLAUDE.md           # Документация для ИИ-агентов
+├── templates/          # HTML-шаблоны админки (Bootstrap 5)
 └── data/
-    └── points.json     # База точек Екатеринбурга
+    ├── points.json     # База достопримечательностей
+    ├── admin.db        # SQLite: пользователи и сообщения
+    ├── sessions.pkl    # Сессии бота
+    └── bot.log         # Лог
 ```
 
-## База точек (data/points.json)
+---
 
-10 точек центра Екатеринбурга:
-1. Площадь 1905 года
-2. Дом Севастьянова
-3. Плотинка (Городской пруд)
-4. Храм-на-Крови
-5. Литературный квартал
-6. Улица Вайнера
-7. Екатеринбург-Сити (башня Исеть)
-8. Музей истории Екатеринбурга
-9. Ельцин Центр
-10. УрФУ (главный корпус)
+## Установка на VPS (Ubuntu)
 
-### Добавить новую точку
+```bash
+git clone https://github.com/ushakova88sasha-lab/tourist-bot-ekb.git /root/tourist-bot-ekb
+cd /root/tourist-bot-ekb
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
 
-Просто добавь объект в `data/points.json`:
+Создай файл с токенами:
+```bash
+nano /root/tourist-bot-ekb/.env
+```
+```
+TELEGRAM_TOKEN=токен_от_BotFather
+ANTHROPIC_API_KEY=ключ_от_Anthropic
+```
+
+Создай systemd-сервисы:
+```bash
+cat > /etc/systemd/system/tourist_bot.service << 'EOF'
+[Unit]
+Description=Tourist Bot Ekb
+After=network.target
+
+[Service]
+WorkingDirectory=/root/tourist-bot-ekb
+EnvironmentFile=/root/tourist-bot-ekb/.env
+ExecStart=/root/tourist-bot-ekb/venv/bin/python3 bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > /etc/systemd/system/tourist_admin.service << 'EOF'
+[Unit]
+Description=Tourist Bot Admin Panel
+After=network.target
+
+[Service]
+WorkingDirectory=/root/tourist-bot-ekb
+EnvironmentFile=/root/tourist-bot-ekb/.env
+ExecStart=/root/tourist-bot-ekb/venv/bin/python3 admin.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable tourist_bot tourist_admin
+systemctl start tourist_bot tourist_admin
+```
+
+---
+
+## Обновление кода
+
+```bash
+cd /root/tourist-bot-ekb
+git pull
+systemctl restart tourist_bot tourist_admin
+```
+
+---
+
+## Добавить новую точку вручную
+
+Добавь объект в `data/points.json` и перезапусти бота:
+
 ```json
 {
-  "id": 11,
+  "id": 31,
   "name": "Название места",
   "lat": 56.XXXXX,
   "lon": 60.XXXXX,
   "history": "Историческая справка...",
   "fact": "Интересный факт...",
-  "photo_url": "",
-  "tags": ["тег1", "тег2"],
-  "nearby_ids": [1, 3]
+  "photo_url": "https://...",
+  "tags": ["тег"],
+  "nearby_ids": [1, 2]
 }
 ```
-Координаты удобно брать с Google Maps (правый клик → «Что здесь?»).
 
 ---
 
-## Радиус поиска
+## Переменные окружения
 
-По умолчанию **400 метров**. Изменить в `bot.py`:
-```python
-SEARCH_RADIUS_M = 400
-```
-
----
-
-## Что дальше (план расширения)
-
-- [ ] Добавить фото мест (поле `photo_url`)
-- [ ] MAX Bot (аналогичный бот для платформы MAX)
-- [ ] Расширить базу до 50+ точек
-- [ ] Добавить режим «прогулка» — маршрут по нескольким точкам
-- [ ] Категории: история / архитектура / еда / современность
+| Переменная | Описание |
+|---|---|
+| `TELEGRAM_TOKEN` | Токен от @BotFather |
+| `ANTHROPIC_API_KEY` | Ключ Anthropic API |
+| `ADMIN_LOGIN` | Логин админки (по умолчанию: admin) |
+| `ADMIN_PASSWORD` | Пароль админки (по умолчанию: admin) |
