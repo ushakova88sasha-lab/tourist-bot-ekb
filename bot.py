@@ -91,7 +91,7 @@ def generate_point_data(lat: float, lon: float, place_name: str) -> dict:
   "fact": "один интересный факт 1-2 предложения"
 }}"""
 
-    response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+    response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
     text = response.text.strip()
     json_match = re.search(r'\{.*\}', text, re.DOTALL)
     if json_match:
@@ -148,7 +148,7 @@ def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
 
 Пиши тепло, как будто рассказываешь другу. Не используй казённый стиль."""
 
-    response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+    response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
     story = response.text
     point["story"] = story
     save_points()
