@@ -10,7 +10,7 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     CallbackQueryHandler, filters, ContextTypes, PicklePersistence
 )
-import google.generativeai as genai
+from google import genai
 import db
 
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "bot.log")
@@ -78,8 +78,7 @@ def reverse_geocode(lat: float, lon: float) -> str:
 
 
 def generate_point_data(lat: float, lon: float, place_name: str) -> dict:
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    client = genai.Client(api_key=GEMINI_API_KEY)
     prompt = f"""Ты — гид по городам России. Нужна информация о месте.
 
 Название: {place_name}
@@ -92,7 +91,7 @@ def generate_point_data(lat: float, lon: float, place_name: str) -> dict:
   "fact": "один интересный факт 1-2 предложения"
 }}"""
 
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
     text = response.text.strip()
     json_match = re.search(r'\{.*\}', text, re.DOTALL)
     if json_match:
@@ -131,8 +130,7 @@ def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
         logger.info(f"Кэш: «{point['name']}»")
         return point["story"]
 
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    client = genai.Client(api_key=GEMINI_API_KEY)
     nearby_str = ", ".join(nearby_names) if nearby_names else "нет данных"
 
     prompt = f"""Ты — увлечённый гид. Пользователь только что пришёл к месту "{point['name']}".
@@ -150,7 +148,7 @@ def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
 
 Пиши тепло, как будто рассказываешь другу. Не используй казённый стиль."""
 
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
     story = response.text
     point["story"] = story
     save_points()
