@@ -10,7 +10,7 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     CallbackQueryHandler, filters, ContextTypes, PicklePersistence
 )
-from google import genai
+from groq import Groq
 import db
 
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "bot.log")
@@ -25,7 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
 SEARCH_RADIUS_M = 1500
 POINTS_FILE = "data/points.json"
@@ -78,7 +78,7 @@ def reverse_geocode(lat: float, lon: float) -> str:
 
 
 def generate_point_data(lat: float, lon: float, place_name: str) -> dict:
-    client = genai.Client(api_key=GEMINI_API_KEY)
+    client = Groq(api_key=GROQ_API_KEY)
     prompt = f"""Ты — гид по городам России. Нужна информация о месте.
 
 Название: {place_name}
@@ -91,8 +91,11 @@ def generate_point_data(lat: float, lon: float, place_name: str) -> dict:
   "fact": "один интересный факт 1-2 предложения"
 }}"""
 
-    response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
-    text = response.text.strip()
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    text = response.choices[0].message.content.strip()
     json_match = re.search(r'\{.*\}', text, re.DOTALL)
     if json_match:
         return json.loads(json_match.group())
@@ -130,7 +133,7 @@ def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
         logger.info(f"Кэш: «{point['name']}»")
         return point["story"]
 
-    client = genai.Client(api_key=GEMINI_API_KEY)
+    client = Groq(api_key=GROQ_API_KEY)
     nearby_str = ", ".join(nearby_names) if nearby_names else "нет данных"
 
     prompt = f"""Ты — увлечённый гид. Пользователь только что пришёл к месту "{point['name']}".
@@ -148,8 +151,11 @@ def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
 
 Пиши тепло, как будто рассказываешь другу. Не используй казённый стиль."""
 
-    response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
-    story = response.text
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    story = response.choices[0].message.content
     point["story"] = story
     save_points()
     logger.info(f"Сохранён рассказ для «{point['name']}»")
