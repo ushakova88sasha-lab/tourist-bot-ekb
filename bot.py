@@ -70,11 +70,15 @@ def reverse_geocode(lat: float, lon: float) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": "TouristBot/1.0"})
     with urllib.request.urlopen(req, timeout=5) as resp:
         data = json.loads(resp.read())
+    address = data.get("address", {})
     name = (
         data.get("name")
-        or data.get("address", {}).get("road")
+        or address.get("road")
         or data.get("display_name", "неизвестное место")
     )
+    city = address.get("city") or address.get("town") or address.get("village") or ""
+    if city and city not in name:
+        name = f"{name}, {city}"
     return name
 
 
