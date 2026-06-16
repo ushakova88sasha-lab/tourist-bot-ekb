@@ -162,7 +162,7 @@ def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
 
 
 LOCATION_KEYBOARD = ReplyKeyboardMarkup(
-    [[KeyboardButton("📍 Указать новое место", request_location=True)]],
+    [[KeyboardButton("📍 Указать моё место расположения", request_location=True)]],
     resize_keyboard=True
 )
 
@@ -335,7 +335,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     db.log_message(update.effective_user.id, "in", text)
 
-    if "Указать новое место" in text:
+    if "Указать моё место расположения" in text:
         reply = (
             "📍 Чтобы поделиться геолокацией:\n\n"
             "📱 *На телефоне:* нажми синюю кнопку внизу → подтверди в диалоге\n"
@@ -399,7 +399,7 @@ async def handle_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def post_init(app):
     db.init_db()
     await app.bot.set_my_commands([
-        BotCommand("mesto", "Указать новое место"),
+        BotCommand("mesto", "Указать моё место расположения"),
     ])
 
 
