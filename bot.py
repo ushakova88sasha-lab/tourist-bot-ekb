@@ -248,7 +248,7 @@ async def show_place(message, context, point, distance, idx, total):
     nav_buttons = " ".join(
         btn.text for row in nav.inline_keyboard for btn in row
     ) if nav.inline_keyboard else ""
-    nav_text = f"📍 {point['name']} — место {idx + 1} из {total}"
+    nav_text = f"📍 {point['name']}" if total == 1 else f"📍 {point['name']} — место {idx + 1} из {total}"
     await message.reply_text(nav_text, reply_markup=nav)
     db.log_message(chat_id, "out", nav_text + (f"  [{nav_buttons}]" if nav_buttons else ""))
 
