@@ -103,11 +103,13 @@ def generate_point_data(lat: float, lon: float, place_name: str) -> dict:
 Название: {place_name}
 Координаты: {lat}, {lon}
 
+Важно: пиши только то, в чём уверен. Не придумывай конкретные адреса, магазины или здания — только общая история района или улицы.
+
 Верни только JSON, без пояснений:
 {{
   "name": "точное красивое название места",
-  "history": "историческая справка 2-3 предложения живым языком",
-  "fact": "один интересный факт 1-2 предложения"
+  "history": "историческая справка об этом районе или улице, 2-3 предложения живым языком",
+  "fact": "один интересный факт об этом месте, 1-2 предложения"
 }}"""
 
     text = yandex_gpt(prompt).strip()
@@ -204,7 +206,9 @@ async def show_place(message, context, point, distance, idx, total):
 
     if story:
         dist_text = f"\n\n📏 Расстояние: {int(distance)} м"
-        await message.reply_text(story + dist_text)
+        if "ai-generated" in point.get("tags", []):
+            dist_text += "\n\n⚠️ _Информация сгенерирована ИИ и может содержать неточности._"
+        await message.reply_text(story + dist_text, parse_mode="Markdown")
         db.log_message(chat_id, "out", story + dist_text)
         if point.get("photo_url"):
             await message.reply_photo(photo=point["photo_url"])
