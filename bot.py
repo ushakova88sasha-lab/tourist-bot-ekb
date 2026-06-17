@@ -154,20 +154,24 @@ def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
         logger.info(f"Кэш: «{point['name']}»")
         return point["story"]
 
-    nearby_str = ", ".join(nearby_names) if nearby_names else "нет данных"
+    nearby_str = ", ".join(nearby_names) if nearby_names else ""
+
+    nearby_section = f"4. 🗺 Рядом стоит посетить: {nearby_str}" if nearby_str else ""
+    structure = """1. 📍 **{name}** — одно яркое вводное предложение
+2. 📜 Историческая справка (2-3 предложения, живым языком)
+3. 💡 Интересный факт (1-2 предложения){nearby}""".format(
+        name=point['name'],
+        nearby=f"\n{nearby_section}" if nearby_section else ""
+    )
 
     prompt = f"""Ты — увлечённый гид. Пользователь только что пришёл к месту "{point['name']}".
 
 Данные о месте:
 - Историческая справка: {point['history']}
 - Интересный факт: {point['fact']}
-- Рядом находятся: {nearby_str}
 
 Напиши живой, увлекательный текст для Telegram-бота (не более 350 слов). Структура:
-1. 📍 **{point['name']}** — одно яркое вводное предложение
-2. 📜 Историческая справка (2-3 предложения, живым языком)
-3. 💡 Интересный факт (1-2 предложения)
-4. 🗺 Рядом стоит посетить: перечисли ближайшие места одной строкой
+{structure}
 
 Пиши тепло, как будто рассказываешь другу. Не используй казённый стиль."""
 
@@ -211,7 +215,7 @@ async def show_place(message, context, point, distance, idx, total):
     if story:
         dist_text = f"\n\n📏 Расстояние: {int(distance)} м"
         if "ai-generated" in point.get("tags", []):
-            dist_text += "\n\n⚠️ _Информация сгенерирована ИИ и может содержать неточности._"
+            dist_text += "\n\n⚠️ _Информация сгенерирована ИИ._"
         await message.reply_text(story + dist_text, parse_mode="Markdown")
         db.log_message(chat_id, "out", story + dist_text)
         if point.get("photo_url"):
