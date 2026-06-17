@@ -10,8 +10,7 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     CallbackQueryHandler, filters, ContextTypes, PicklePersistence
 )
-from gigachat import GigaChat
-from gigachat.models import Chat, Messages, MessagesRole
+import requests
 import db
 
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "bot.log")
@@ -26,7 +25,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
-GIGACHAT_AUTH_KEY = os.environ.get("GIGACHAT_AUTH_KEY", "")
+YANDEX_API_KEY = os.environ.get("YANDEX_API_KEY", "")
+YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID", "")
 
 SEARCH_RADIUS_M = 1500
 POINTS_FILE = "data/points.json"
@@ -82,6 +82,21 @@ def reverse_geocode(lat: float, lon: float) -> str:
     return name
 
 
+def yandex_gpt(prompt: str) -> str:
+    response = requests.post(
+        "https://llm.api.cloud.yandex.net/foundationModels/v1/completion",
+        headers={"Authorization": f"Api-Key {YANDEX_API_KEY}", "Content-Type": "application/json"},
+        json={
+            "modelUri": f"gpt://{YANDEX_FOLDER_ID}/yandexgpt/latest",
+            "completionOptions": {"stream": False, "temperature": 0.7, "maxTokens": "1000"},
+            "messages": [{"role": "user", "text": prompt}]
+        },
+        timeout=30
+    )
+    response.raise_for_status()
+    return response.json()["result"]["alternatives"][0]["message"]["text"]
+
+
 def generate_point_data(lat: float, lon: float, place_name: str) -> dict:
     prompt = f"""Ты — гид по городам России. Нужна информация о месте.
 
@@ -95,9 +110,7 @@ def generate_point_data(lat: float, lon: float, place_name: str) -> dict:
   "fact": "один интересный факт 1-2 предложения"
 }}"""
 
-    with GigaChat(credentials=GIGACHAT_AUTH_KEY, verify_ssl_certs=False) as giga:
-        response = giga.chat(Chat(messages=[Messages(role=MessagesRole.USER, content=prompt)]))
-    text = response.choices[0].message.content.strip()
+    text = yandex_gpt(prompt).strip()
     json_match = re.search(r'\{.*\}', text, re.DOTALL)
     if json_match:
         return json.loads(json_match.group())
@@ -152,9 +165,7 @@ def get_or_generate_story(point: dict, nearby_names: list[str]) -> str:
 
 Пиши тепло, как будто рассказываешь другу. Не используй казённый стиль."""
 
-    with GigaChat(credentials=GIGACHAT_AUTH_KEY, verify_ssl_certs=False) as giga:
-        response = giga.chat(Chat(messages=[Messages(role=MessagesRole.USER, content=prompt)]))
-    story = response.choices[0].message.content
+    story = yandex_gpt(prompt)
     point["story"] = story
     save_points()
     logger.info(f"Сохранён рассказ для «{point['name']}»")
