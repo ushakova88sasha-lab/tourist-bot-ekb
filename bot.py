@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 YANDEX_API_KEY = os.environ.get("YANDEX_API_KEY", "")
 YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID", "")
+OWNER_ID = int(os.environ.get("OWNER_ID", "84822852"))
 
 SEARCH_RADIUS_M = 1500
 POINTS_FILE = "data/points.json"
@@ -82,6 +83,10 @@ def reverse_geocode(lat: float, lon: float) -> str:
     return name
 
 
+class YandexQuotaError(Exception):
+    pass
+
+
 def yandex_gpt(prompt: str) -> str:
     response = requests.post(
         "https://llm.api.cloud.yandex.net/foundationModels/v1/completion",
@@ -93,6 +98,8 @@ def yandex_gpt(prompt: str) -> str:
         },
         timeout=30
     )
+    if response.status_code == 429 or (response.status_code == 402):
+        raise YandexQuotaError("Лимит токенов YandexGPT исчерпан")
     response.raise_for_status()
     return response.json()["result"]["alternatives"][0]["message"]["text"]
 
@@ -204,8 +211,14 @@ async def show_place(message, context, point, distance, idx, total):
     story = None
     try:
         story = get_or_generate_story(point, nearby_names)
+    except YandexQuotaError as e:
+        logger.error(f"Лимит YandexGPT: {e}")
+        try:
+            await context.bot.send_message(OWNER_ID, "⚠️ Лимит токенов YandexGPT исчерпан! Нужно пополнить баланс.")
+        except Exception:
+            pass
     except Exception as e:
-        logger.error(f"Ошибка Claude API: {e}")
+        logger.error(f"Ошибка YandexGPT: {e}")
 
     try:
         await typing_msg.delete()
@@ -221,8 +234,6 @@ async def show_place(message, context, point, distance, idx, total):
         if point.get("photo_url"):
             await message.reply_photo(photo=point["photo_url"])
             db.log_message(chat_id, "out", f"🖼 Фото: {point['name']}")
-        await message.reply_location(latitude=point["lat"], longitude=point["lon"])
-        db.log_message(chat_id, "out", f"📍 Геолокация места: {point['lat']}, {point['lon']}")
     else:
         fallback = (
             f"📍 {point['name']}\n\n"
