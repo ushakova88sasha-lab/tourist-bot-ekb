@@ -227,7 +227,7 @@ async def show_place(message, context, point, distance, idx, total):
         pass
 
     if story:
-        dist_text = f"\n\n📏 Расстояние: {int(distance)} м"
+        dist_text = f"\n\n📏 От тебя до этого места: {int(distance)} м"
         if "ai-generated" in point.get("tags", []):
             dist_text += "\n\n⚠️ _Информация сгенерирована ИИ._"
         await message.reply_text(story + dist_text, parse_mode="Markdown")
@@ -240,7 +240,7 @@ async def show_place(message, context, point, distance, idx, total):
             f"📍 {point['name']}\n\n"
             f"📜 {point['history']}\n\n"
             f"💡 {point['fact']}\n\n"
-            f"📏 Расстояние: {int(distance)} м"
+            f"📏 От тебя до этого места: {int(distance)} м"
         )
         await message.reply_text(fallback)
         db.log_message(chat_id, "out", fallback)
