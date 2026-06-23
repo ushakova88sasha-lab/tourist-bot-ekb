@@ -30,6 +30,7 @@ YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID", "")
 OWNER_ID = int(os.environ.get("OWNER_ID", "84822852"))
 
 SEARCH_RADIUS_M = 1500
+CURRENT_PLACE_RADIUS_M = 100
 POINTS_FILE = "data/points.json"
 
 with open(POINTS_FILE, "r", encoding="utf-8") as f:
@@ -254,41 +255,95 @@ async def show_place(message, context, point, distance, idx, total):
     db.log_message(chat_id, "out", nav_text + (f"  [{nav_buttons}]" if nav_buttons else ""))
 
 
-async def handle_coords(update, context, lat, lon):
-    searching_msg = await update.message.reply_text("🔍 Ищу интересные места рядом с тобой...", reply_markup=LOCATION_KEYBOARD)
-    places = find_nearest_points(lat, lon)
-
-    within_radius = [(p, d) for p, d in places if d <= SEARCH_RADIUS_M]
-
-    if not within_radius:
+async def show_current_place(message, context, point, distance, nearby_count):
+    chat_id = message.chat_id
+    nearby_names = get_nearby_names(point)
+    typing_msg = await message.reply_text("✍️ Готовлю рассказ...")
+    story = None
+    try:
+        story = get_or_generate_story(point, nearby_names)
+    except YandexQuotaError as e:
+        logger.error(f"Лимит YandexGPT: {e}")
         try:
-            await searching_msg.edit_text("🌐 Нашёл новое место — узнаю о нём у ИИ...")
+            await context.bot.send_message(OWNER_ID, "⚠️ Лимит токенов YandexGPT исчерпан! Нужно пополнить баланс.")
         except Exception:
             pass
-        new_point = add_new_point(lat, lon)
-        if new_point:
-            places = [(new_point, 0)]
-        else:
-            reply = f"😔 В радиусе {SEARCH_RADIUS_M} м от тебя пока нет точек.\nПопробуй в другом месте!"
-            await update.message.reply_text(reply)
-            db.log_message(update.effective_user.id, "out", reply)
-            try:
-                await searching_msg.delete()
-            except Exception:
-                pass
-            return
-    else:
-        places = within_radius
+    except Exception as e:
+        logger.error(f"Ошибка YandexGPT: {e}")
 
-    context.user_data["places"] = [(p["id"], int(dist)) for p, dist in places]
+    try:
+        await typing_msg.delete()
+    except Exception:
+        pass
+
+    if story:
+        dist_text = f"\n\n📏 От тебя: {int(distance)} м" if distance > 0 else ""
+        if "ai-generated" in point.get("tags", []):
+            dist_text += "\n\n⚠️ _Информация сгенерирована ИИ._"
+        await message.reply_text(story + dist_text, parse_mode="Markdown")
+        db.log_message(chat_id, "out", story + dist_text)
+        if point.get("photo_url"):
+            await message.reply_photo(photo=point["photo_url"])
+            db.log_message(chat_id, "out", f"🖼 Фото: {point['name']}")
+    else:
+        fallback = f"📍 {point['name']}\n\n📜 {point['history']}\n\n💡 {point['fact']}"
+        if distance > 0:
+            fallback += f"\n\n📏 От тебя: {int(distance)} м"
+        await message.reply_text(fallback)
+        db.log_message(chat_id, "out", fallback)
+
+    if nearby_count > 0:
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(f"🗺 Интересные места рядом ({nearby_count})", callback_data="nav_0")]])
+        nav_text = f"📍 {point['name']}"
+        await message.reply_text(nav_text, reply_markup=kb)
+        db.log_message(chat_id, "out", f"{nav_text}  [Интересные места рядом ({nearby_count})]")
+    else:
+        nav_text = f"📍 {point['name']}"
+        await message.reply_text(nav_text)
+        db.log_message(chat_id, "out", nav_text)
+
+
+async def handle_coords(update, context, lat, lon):
+    uid = update.effective_user.id
+    searching_msg = await update.message.reply_text("🔍 Определяю место...", reply_markup=LOCATION_KEYBOARD)
+
+    all_nearby = find_nearest_points(lat, lon)
+
+    current_point = None
+    current_dist = 0
+
+    if all_nearby and all_nearby[0][1] <= CURRENT_PLACE_RADIUS_M:
+        current_point, current_dist = all_nearby[0]
+        other_nearby = [(p, d) for p, d in all_nearby if d <= SEARCH_RADIUS_M and p["id"] != current_point["id"]]
+    else:
+        try:
+            await searching_msg.edit_text("🌐 Узнаю о месте у ИИ...")
+        except Exception:
+            pass
+        current_point = add_new_point(lat, lon)
+        other_nearby = [(p, d) for p, d in all_nearby if d <= SEARCH_RADIUS_M]
+        if not current_point:
+            if other_nearby:
+                current_point, current_dist = other_nearby[0]
+                other_nearby = other_nearby[1:]
+            else:
+                reply = "😔 Не удалось определить место. Попробуй ещё раз!"
+                await update.message.reply_text(reply)
+                db.log_message(uid, "out", reply)
+                try:
+                    await searching_msg.delete()
+                except Exception:
+                    pass
+                return
+
+    context.user_data["places"] = [(p["id"], int(d)) for p, d in other_nearby]
 
     try:
         await searching_msg.delete()
     except Exception:
         pass
 
-    point, distance = places[0]
-    await show_place(update.message, context, point, distance, 0, len(places))
+    await show_current_place(update.message, context, current_point, current_dist, len(other_nearby))
 
 
 async def handle_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
