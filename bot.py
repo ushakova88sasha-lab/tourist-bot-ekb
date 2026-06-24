@@ -446,6 +446,18 @@ async def cmd_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.log_message(uid, "out", reply)
 
 
+async def cmd_broadcast_me(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if uid != OWNER_ID:
+        return
+    text = " ".join(context.args).strip() if context.args else ""
+    if not text:
+        await update.message.reply_text("Использование: /broadcast_me Текст сообщения")
+        return
+    await context.bot.send_message(OWNER_ID, text)
+    await update.message.reply_text("✅ Отправлено тебе — проверяй!")
+
+
 async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if uid != OWNER_ID:
@@ -583,6 +595,7 @@ def main():
     )
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("mesto", cmd_place))
+    app.add_handler(CommandHandler("broadcast_me", cmd_broadcast_me))
     app.add_handler(CommandHandler("broadcast", cmd_broadcast))
     app.add_handler(MessageHandler(filters.LOCATION, handle_location))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
