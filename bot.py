@@ -455,6 +455,7 @@ async def cmd_broadcast_me(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Использование: /broadcast_me Текст сообщения")
         return
     await context.bot.send_message(OWNER_ID, text)
+    db.log_message(OWNER_ID, "out", f"📢 [рассылка] {text}")
     await update.message.reply_text("✅ Отправлено тебе — проверяй!")
 
 
@@ -471,6 +472,7 @@ async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for u in users:
         try:
             await context.bot.send_message(u["chat_id"], text)
+            db.log_message(u["chat_id"], "out", f"📢 [рассылка] {text}")
             sent += 1
         except Exception:
             failed += 1
