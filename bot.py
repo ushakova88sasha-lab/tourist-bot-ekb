@@ -86,14 +86,16 @@ def reverse_geocode(lat: float, lon: float) -> str:
 
 
 def geocode_address(query: str) -> list:
-    url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(query)}&format=json&limit=3&accept-language=ru"
+    url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(query)}&format=json&limit=3&accept-language=ru&addressdetails=1"
     req = urllib.request.Request(url, headers={"User-Agent": "TouristBot/1.0"})
     with urllib.request.urlopen(req, timeout=5) as resp:
         results = json.loads(resp.read())
     output = []
     for r in results[:3]:
-        parts = r.get("display_name", "").split(",")
-        short = ", ".join(p.strip() for p in parts[:2])
+        addr = r.get("address", {})
+        name = (r.get("name") or addr.get("name") or addr.get("road") or r.get("display_name", "").split(",")[0]).strip()
+        city = addr.get("city") or addr.get("town") or addr.get("village") or ""
+        short = f"{name}, {city}" if city and city not in name else name
         output.append({"name": short, "lat": float(r["lat"]), "lon": float(r["lon"])})
     return output
 
