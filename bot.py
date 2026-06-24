@@ -5,6 +5,7 @@ import os
 import re
 import logging
 import urllib.request
+import urllib.parse
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -82,6 +83,28 @@ def reverse_geocode(lat: float, lon: float) -> str:
     if city and city not in name:
         name = f"{name}, {city}"
     return name
+
+
+def geocode_address(query: str) -> list:
+    url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(query)}&format=json&limit=3&accept-language=ru"
+    req = urllib.request.Request(url, headers={"User-Agent": "TouristBot/1.0"})
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        results = json.loads(resp.read())
+    output = []
+    for r in results[:3]:
+        parts = r.get("display_name", "").split(",")
+        short = ", ".join(p.strip() for p in parts[:2])
+        output.append({"name": short, "lat": float(r["lat"]), "lon": float(r["lon"])})
+    return output
+
+
+SEARCH_INSTRUCTIONS = (
+    "Попробуй написать точнее, например:\n\n"
+    "• Цирк Екатеринбург\n"
+    "• улица Ленина 1, Екатеринбург\n"
+    "• Храм на Крови Екатеринбург\n\n"
+    "Или нажми кнопку ниже и отправь геолокацию 👇"
+)
 
 
 class YandexQuotaError(Exception):
@@ -303,12 +326,9 @@ async def show_current_place(message, context, point, distance, nearby_count):
         db.log_message(chat_id, "out", nav_text)
 
 
-async def handle_coords(update, context, lat, lon):
-    uid = update.effective_user.id
-    searching_msg = await update.message.reply_text("🔍 Определяю место...", reply_markup=LOCATION_KEYBOARD)
-
+async def process_coords(message, uid, context, lat, lon):
+    searching_msg = await message.reply_text("🔍 Определяю место...", reply_markup=LOCATION_KEYBOARD)
     all_nearby = find_nearest_points(lat, lon)
-
     current_point = None
     current_dist = 0
 
@@ -328,7 +348,7 @@ async def handle_coords(update, context, lat, lon):
                 other_nearby = other_nearby[1:]
             else:
                 reply = "😔 Не удалось определить место. Попробуй ещё раз!"
-                await update.message.reply_text(reply)
+                await message.reply_text(reply)
                 db.log_message(uid, "out", reply)
                 try:
                     await searching_msg.delete()
@@ -337,13 +357,37 @@ async def handle_coords(update, context, lat, lon):
                 return
 
     context.user_data["places"] = [(p["id"], int(d)) for p, d in other_nearby]
-
     try:
         await searching_msg.delete()
     except Exception:
         pass
+    await show_current_place(message, context, current_point, current_dist, len(other_nearby))
 
-    await show_current_place(update.message, context, current_point, current_dist, len(other_nearby))
+
+async def handle_coords(update, context, lat, lon):
+    await process_coords(update.message, update.effective_user.id, context, lat, lon)
+
+
+async def handle_address_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = update.effective_user.id
+
+    if query.data == "addr_none":
+        await query.edit_message_text(SEARCH_INSTRUCTIONS, reply_markup=None)
+        db.log_message(uid, "out", SEARCH_INSTRUCTIONS)
+        return
+
+    idx = int(query.data.split("_")[1])
+    results = context.user_data.get("geocode_results", [])
+    if not results or idx >= len(results):
+        await query.edit_message_text("Сессия устарела — напиши адрес заново.")
+        return
+
+    r = results[idx]
+    db.log_message(uid, "in", f"[выбрал адрес: {r['name']}]")
+    await query.edit_message_reply_markup(reply_markup=None)
+    await process_coords(query.message, uid, context, r["lat"], r["lon"])
 
 
 async def handle_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -445,17 +489,29 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         pass
 
-    reply = (
-        "📍 Отправь мне геолокацию — расскажу что интересного рядом!\n\n"
-        "⚠️ Геолокация работает только со смартфона — с компьютера отправить её не получится.\n\n"
-        "Если кнопка не работает, проверь:\n"
-        "📱 Android: Настройки → Приложения → Telegram → Разрешения → Местоположение\n"
-        "🍎 iPhone: Настройки → Telegram → Геопозиция → При использовании\n\n"
-        "Или отправь через скрепку 📎 → Геопозиция\n"
-        "Или напиши координаты: 56.841500, 60.604300"
-    )
-    await update.message.reply_text(reply, reply_markup=LOCATION_KEYBOARD)
-    db.log_message(update.effective_user.id, "out", reply)
+    # Поиск по введённому адресу через Nominatim
+    try:
+        results = geocode_address(text)
+    except Exception as e:
+        logger.error(f"geocode_address error: {e}")
+        results = []
+
+    uid = update.effective_user.id
+
+    if not results:
+        await update.message.reply_text(SEARCH_INSTRUCTIONS, reply_markup=LOCATION_KEYBOARD)
+        db.log_message(uid, "out", SEARCH_INSTRUCTIONS)
+        return
+
+    context.user_data["geocode_results"] = results
+    buttons = [
+        [InlineKeyboardButton(r["name"], callback_data=f"addr_{i}")]
+        for i, r in enumerate(results)
+    ]
+    buttons.append([InlineKeyboardButton("❌ Не то", callback_data="addr_none")])
+    reply = "Нашла несколько вариантов — выбери нужный:"
+    await update.message.reply_text(reply, reply_markup=InlineKeyboardMarkup(buttons))
+    db.log_message(uid, "out", reply)
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -511,7 +567,8 @@ def main():
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    app.add_handler(CallbackQueryHandler(handle_nav))
+    app.add_handler(CallbackQueryHandler(handle_address_choice, pattern=r"^addr_"))
+    app.add_handler(CallbackQueryHandler(handle_nav, pattern=r"^nav_"))
     logger.info("Бот запущен...")
     app.run_polling()
 
