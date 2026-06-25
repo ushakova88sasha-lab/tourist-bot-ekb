@@ -94,9 +94,12 @@ def geocode_address(query: str) -> list:
     req = urllib.request.Request(url, headers={"User-Agent": "TouristBot/1.0"})
     with urllib.request.urlopen(req, timeout=5) as resp:
         results = json.loads(resp.read())
+    SKIP_TYPES = {"steps", "footway", "path", "cycleway", "track", "pedestrian"}
     output = []
     seen_names = set()
     for r in results:
+        if r.get("type") in SKIP_TYPES:
+            continue
         addr = r.get("address", {})
         if not addr.get("country_code", "").startswith("ru"):
             continue
@@ -149,6 +152,7 @@ def generate_point_data(lat: float, lon: float, place_name: str) -> dict:
 Координаты: {lat}, {lon}
 
 Важно:
+- Если это место тебе незнакомо или ты не уверен в его существовании — верни JSON где history и fact = "UNKNOWN". Не придумывай.
 - Пиши только то, в чём абсолютно уверен
 - НЕ указывай конкретные даты и годы, если не уверен на 100% — лучше вообще не упоминать год
 - НЕ упоминай магазины, ТЦ, кафе или жилые здания
@@ -164,7 +168,10 @@ def generate_point_data(lat: float, lon: float, place_name: str) -> dict:
     text = yandex_gpt(prompt).strip()
     json_match = re.search(r'\{.*\}', text, re.DOTALL)
     if json_match:
-        return json.loads(json_match.group())
+        data = json.loads(json_match.group())
+        if data.get("history") == "UNKNOWN" or data.get("fact") == "UNKNOWN":
+            return None
+        return data
     raise ValueError(f"Gemini не вернул JSON: {text}")
 
 
@@ -173,6 +180,9 @@ def add_new_point(lat: float, lon: float) -> dict | None:
         place_name = reverse_geocode(lat, lon)
         logger.info(f"Nominatim: «{place_name}» для {lat}, {lon}")
         data = generate_point_data(lat, lon, place_name)
+        if data is None:
+            logger.info(f"ИИ не знает место «{place_name}» — точка не создаётся")
+            return None
         new_id = max((p["id"] for p in POINTS), default=0) + 1
         point = {
             "id": new_id,
