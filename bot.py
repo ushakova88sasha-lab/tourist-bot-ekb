@@ -546,7 +546,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons.append([InlineKeyboardButton("❌ Не то", callback_data="addr_none")])
     reply = "Нашла несколько вариантов — выбери нужный:"
     await update.message.reply_text(reply, reply_markup=InlineKeyboardMarkup(buttons))
-    db.log_message(uid, "out", reply)
+    btn_log = " ".join(f"[{r['name']}]" for r in results) + " [❌ Не то]"
+    db.log_message(uid, "out", f"{reply} {btn_log}")
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -563,8 +564,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _log_user(update)
     uid = update.effective_user.id
-    name = update.message.document.file_name or "файл"
-    db.log_message(uid, "in", f"📎 Файл: {name}")
+    doc = update.message.document
+    name = doc.file_name or "файл"
+    db.log_message(uid, "in", f"📎:{doc.file_id}:{name}")
     reply = "📍 Отправь мне геолокацию — расскажу что интересного рядом!\nИспользуй кнопку внизу или скрепку → Геопозиция."
     await update.message.reply_text(reply, reply_markup=LOCATION_KEYBOARD)
     db.log_message(uid, "out", reply)
