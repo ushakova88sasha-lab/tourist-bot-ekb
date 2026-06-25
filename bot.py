@@ -97,9 +97,9 @@ def geocode_address(query: str) -> list:
     output = []
     seen_names = set()
     for r in results:
-        if float(r.get("importance", 0)) < 0.1:
-            continue
         addr = r.get("address", {})
+        if not addr.get("country_code", "").startswith("ru"):
+            continue
         name = (r.get("name") or addr.get("name") or addr.get("road") or r.get("display_name", "").split(",")[0]).strip()
         city = addr.get("city") or addr.get("town") or addr.get("village") or ""
         short = f"{name}, {city}" if city and city not in name else name
