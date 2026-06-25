@@ -21,7 +21,7 @@
 
 <div class="card p-4" style="max-width:720px;">
     {% if messages %}
-    <div style="display:flex; flex-direction:column; gap:10px;">
+    <div id="msg-list" style="display:flex; flex-direction:column; gap:10px;">
     {% for msg in messages %}
         {% if msg.direction == 'in' %}
         <div style="display:flex; justify-content:flex-start;">
@@ -62,10 +62,10 @@
 </div>
 
 <div style="max-width:720px; margin-top:12px;">
-    <form method="post" action="{{ url_for('send_message', chat_id=user.chat_id) }}">
+    <form id="reply-form" action="{{ url_for('send_message', chat_id=user.chat_id) }}">
         <div style="display:flex; gap:8px;">
-            <input name="text" type="text" class="form-control"
-                   placeholder="Написать пользователю..." autocomplete="off" required
+            <input id="reply-input" name="text" type="text" class="form-control"
+                   placeholder="Написать пользователю..." autocomplete="off"
                    style="border-radius:10px;">
             <button type="submit" class="btn btn-primary" style="border-radius:10px; padding:0 20px;">
                 <i class="bi bi-send"></i>
@@ -75,7 +75,33 @@
 </div>
 
 <script>
-    window.scrollTo(0, document.body.scrollHeight);
+    const msgList = document.getElementById('msg-list');
+    msgList.scrollIntoView(false);
+
+    document.getElementById('reply-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const input = document.getElementById('reply-input');
+        const text = input.value.trim();
+        if (!text) return;
+
+        await fetch(this.action, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: new URLSearchParams({text: text})
+        });
+
+        const now = new Date().toTimeString().slice(0, 5);
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex; justify-content:flex-end;';
+        div.innerHTML =
+            '<div style="background:#d2e8ff;border-radius:12px 12px 4px 12px;padding:10px 14px;max-width:80%;">' +
+            '<div style="font-size:14px;">' + text.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</div>' +
+            '<div style="font-size:11px;color:#a0aec0;margin-top:4px;text-align:right;">' + now + '</div>' +
+            '</div>';
+        msgList.appendChild(div);
+        input.value = '';
+        div.scrollIntoView({behavior: 'smooth'});
+    });
 </script>
 
 {% endblock %}
