@@ -95,6 +95,7 @@ def geocode_address(query: str) -> list:
     with urllib.request.urlopen(req, timeout=5) as resp:
         results = json.loads(resp.read())
     output = []
+    seen_names = set()
     for r in results:
         if float(r.get("importance", 0)) < 0.2:
             continue
@@ -102,6 +103,9 @@ def geocode_address(query: str) -> list:
         name = (r.get("name") or addr.get("name") or addr.get("road") or r.get("display_name", "").split(",")[0]).strip()
         city = addr.get("city") or addr.get("town") or addr.get("village") or ""
         short = f"{name}, {city}" if city and city not in name else name
+        if short in seen_names:
+            continue
+        seen_names.add(short)
         output.append({"name": short, "lat": float(r["lat"]), "lon": float(r["lon"])})
         if len(output) == 3:
             break
@@ -542,6 +546,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
     if not results:
+        await update.message.reply_text(SEARCH_INSTRUCTIONS, reply_markup=LOCATION_KEYBOARD)
+        db.log_message(uid, "out", SEARCH_INSTRUCTIONS)
         return
 
     context.user_data["geocode_results"] = results
